@@ -1,0 +1,53 @@
+# 晶圆缺陷点阵复检审计台 —— Docker Compose 编排
+#
+# 宿主机端口均可通过环境变量覆盖，例如：
+#   FRONTEND_PORT=8000 BACKEND_PORT=9090 docker compose up --build
+#
+# 可观察验收：
+#   docker compose up --build verify      # 查看逐条 PASS/FAIL 与汇总后退出
+#   docker compose logs -f verify         # 或查看验收日志
+
+services:
+  backend:
+    build:
+      context: ./backend
+    environment:
+      PORT: "8080"
+      GIN_MODE: release
+    ports:
+      # 宿主机端口可配置，容器内固定 8080
+      - "${BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      backend:
+        condition: healthy
+    ports:
+      - "${FRONTEND_PORT:-8088}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  verify:
+    build:
+      context: ./verify
+    depends_on:
+      backend:
+        condition: healthy
+    environment:
+      BACKEND_URL: "http://backend:8080"
+    # 一次性验收：执行完可观察的 PASS/FAIL 核对后退出，退出码即验收结论
+    restart: "no"
